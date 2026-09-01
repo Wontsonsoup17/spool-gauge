@@ -39,12 +39,8 @@
 }
 *{box-sizing:border-box}
 html,body{background:var(--ground)}
-body{
-  margin:0;color:var(--ink);
-  font-family:Archivo,"Helvetica Neue",Arial,sans-serif;font-size:15px;line-height:1.5;
-  -webkit-text-size-adjust:100%;
-  padding-bottom:env(safe-area-inset-bottom);
-}
+body{margin:0;color:var(--ink);font-family:Archivo,"Helvetica Neue",Arial,sans-serif;
+  font-size:15px;line-height:1.5;-webkit-text-size-adjust:100%;padding-bottom:env(safe-area-inset-bottom)}
 .wrap{max-width:660px;margin:0 auto;padding:20px 16px 64px;display:flex;flex-direction:column;gap:16px}
 .top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
 h1{font-size:19px;font-weight:700;letter-spacing:-.01em;margin:0}
@@ -77,9 +73,9 @@ h2.t{margin:6px 0 4px;font-size:18px;font-weight:600;letter-spacing:-.01em}
 .flag.warn{color:var(--warn);border-color:var(--warn)}
 .flag.crit{color:var(--crit);border-color:var(--crit)}
 form{display:flex;flex-direction:column;gap:12px}
+form>.field{flex:0 0 auto}
 .row{display:flex;gap:10px;flex-wrap:wrap}
 .field{display:flex;flex-direction:column;gap:5px;flex:1 1 130px;min-width:120px}
-form>.field{flex:0 0 auto}
 label{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
 input{font-family:Archivo,sans-serif;font-size:16px;color:var(--ink);background:var(--panel-2);
   border:1px solid var(--line-strong);border-radius:8px;padding:10px 11px;width:100%;min-width:0}
@@ -88,6 +84,7 @@ input:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid
 button{font-family:Archivo,sans-serif;font-size:14px;font-weight:600;border-radius:8px;padding:11px 16px;
   border:1px solid var(--line-strong);background:var(--panel-2);color:var(--ink);cursor:pointer}
 button:hover{border-color:var(--accent)}
+button[disabled]{opacity:.55;cursor:default}
 button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 button.primary:hover{filter:brightness(1.07)}
 button.ghost{background:transparent;border-color:var(--line);color:var(--muted);font-weight:500;padding:7px 11px;font-size:13px}
@@ -114,8 +111,8 @@ summary:hover,details[open]>summary{color:var(--ink)}
 .arch:last-child{border-bottom:0}
 .foot{font-size:12.5px;color:var(--faint);text-align:center;line-height:1.6;margin:0}
 .err{color:var(--crit);font-size:13px;margin:0}
-.ok{color:var(--accent);font-size:13px;margin:0}
-code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12.5px;background:var(--panel-2);padding:1px 5px;border-radius:4px;border:1px solid var(--line)}
+.good{color:var(--accent);font-size:13px;margin:0}
+.lockwrap{max-width:400px;margin:8vh auto 0}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 @media(max-width:430px){.dial,.dial svg{width:140px;height:140px}.pct{font-size:29px}.gauge{gap:16px}}
 </style>
@@ -124,60 +121,46 @@ code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12.5px;backgro
 <div class="wrap">
   <div class="top">
     <h1>Spool Gauge</h1>
-    <span class="sub sync"><span class="dot" id="dot"></span><span id="syncTxt">local only</span></span>
+    <span class="sub sync"><span class="dot" id="dot"></span><span id="syncTxt">locked</span></span>
   </div>
   <div id="app"></div>
-  <p class="foot">Estimates drift — purge, priming and failed prints all burn filament.<br>Weigh the spool now and then and use <strong>Correct by weighing</strong>.</p>
+  <p class="foot" id="foot" hidden>Estimates drift — purge, priming and failed prints all burn filament.<br>Weigh the spool now and then and use <strong>Correct by weighing</strong>.</p>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* ============================================================
-   Spool Gauge — filament tracking for a Creality K1
-   Storage: Supabase (synced) when configured, else this browser.
-   No keys are stored in this repository. The Supabase project URL
-   and anon key are entered in the app and kept in localStorage.
+   Spool Gauge — filament tracking for a Creality K1.
+   Static page. Everything lives in this browser's localStorage.
+   The login is a convenience lock, not real security: a static
+   page has no server to check anything. See the README.
    ============================================================ */
 
-const LS_DATA = "spoolgauge.data.v2";
-const LS_CFG  = "spoolgauge.config.v1";
-const uid  = () => Math.random().toString(36).slice(2,10);
+const LS_AUTH = "spoolgauge.auth.v1";
+const LS_DATA = "spoolgauge.data.v3";
+const SS_OPEN = "spoolgauge.unlocked";
+const uid = () => Math.random().toString(36).slice(2,10);
 const nowISO = () => new Date().toISOString();
 
-let state  = { activeId:null, spools:[] };
-let cfg    = null;   // {url, key}
-let sb     = null;   // supabase client
-let session= null;
-let mode   = "local"; // local | synced
-let busy   = false;
+let state = { activeId:null, spools:[] };
+let auth  = null;
+let user  = "";
 
 /* ---------------- storage ---------------- */
-function cfgLoad(){ try{ const r = localStorage.getItem(LS_CFG); cfg = r ? JSON.parse(r) : null; }catch(e){ cfg = null; } }
-function cfgSave(c){ cfg = c; try{ localStorage.setItem(LS_CFG, JSON.stringify(c)); }catch(e){} }
-function cfgClear(){ cfg = null; try{ localStorage.removeItem(LS_CFG); }catch(e){} }
-function dataLoad(){ try{ const r = localStorage.getItem(LS_DATA); if(r) state = JSON.parse(r); }catch(e){} }
-function dataSave(){ try{ localStorage.setItem(LS_DATA, JSON.stringify(state)); }catch(e){} }
+const readJSON = k => { try{ const r = localStorage.getItem(k); return r ? JSON.parse(r) : null; }catch(e){ return null; } };
+const writeJSON = (k,v) => { try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} };
+function dataSave(){ writeJSON(LS_DATA, state); }
+function dataLoad(){ const d = readJSON(LS_DATA); if(d && Array.isArray(d.spools)) state = d; }
 
-async function pull(){
-  if(mode !== "synced") return;
-  const { data, error } = await sb.from("spool_state").select("payload").eq("user_id", session.user.id).maybeSingle();
-  if(error){ console.warn(error.message); return; }
-  if(data && data.payload && Array.isArray(data.payload.spools)){
-    state = { activeId: data.payload.activeId || null, spools: data.payload.spools };
-    dataSave();
-  } else if(state.spools.length){
-    await push();
-  }
+/* ---------------- password hashing ---------------- */
+const enc = new TextEncoder();
+const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+async function hash(password, saltB64){
+  const salt = Uint8Array.from(atob(saltB64), c => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name:"PBKDF2", salt, iterations:150000, hash:"SHA-256" }, key, 256);
+  return b64(bits);
 }
-async function push(){
-  dataSave();
-  if(mode !== "synced") return;
-  busy = true;
-  const { error } = await sb.from("spool_state")
-    .upsert({ user_id: session.user.id, payload: state, updated_at: nowISO() }, { onConflict:"user_id" });
-  busy = false;
-  if(error) console.warn(error.message);
-}
+function newSalt(){ return b64(crypto.getRandomValues(new Uint8Array(16))); }
 
 /* ---------------- model ---------------- */
 const active = () => state.spools.find(s => s.id === state.activeId) || null;
@@ -193,29 +176,108 @@ function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&
 /* ---------------- actions ---------------- */
 function addSpool(name, netGrams){
   state.spools.unshift({ id:uid(), name, netGrams, openedAt:nowISO(), archived:false, entries:[] });
-  state.activeId = state.spools[0].id; push(); render();
+  state.activeId = state.spools[0].id; dataSave(); render();
 }
 function logPrint(grams, label){
   const sp = active(); if(!sp) return;
-  sp.entries.push({ id:uid(), type:"print", grams, label: label || "Print", ts: nowISO() }); push(); render();
+  sp.entries.push({ id:uid(), type:"print", grams, label: label || "Print", ts: nowISO() }); dataSave(); render();
 }
 function logCorrection(grams){
   const sp = active(); if(!sp) return;
-  sp.entries.push({ id:uid(), type:"correction", grams, label:"Weighed", ts: nowISO() }); push(); render();
+  sp.entries.push({ id:uid(), type:"correction", grams, label:"Weighed", ts: nowISO() }); dataSave(); render();
 }
 function removeEntry(id){
   const sp = active(); if(!sp) return;
-  sp.entries = sp.entries.filter(e => e.id !== id); push(); render();
+  sp.entries = sp.entries.filter(e => e.id !== id); dataSave(); render();
 }
 function archiveSpool(){
   const sp = active(); if(!sp) return;
   sp.archived = true; sp.closedAt = nowISO();
   const next = state.spools.find(s => !s.archived);
-  state.activeId = next ? next.id : null; push(); render();
+  state.activeId = next ? next.id : null; dataSave(); render();
 }
-function selectSpool(id){ state.activeId = id; push(); render(); }
+function selectSpool(id){ state.activeId = id; dataSave(); render(); }
 
-/* ---------------- views ---------------- */
+/* ---------------- lock screens ---------------- */
+function setBadge(on, text){
+  document.getElementById("dot").classList.toggle("on", !!on);
+  document.getElementById("syncTxt").textContent = text;
+  document.getElementById("foot").hidden = !on;
+}
+
+function renderCreate(msg){
+  setBadge(false, "new");
+  document.getElementById("app").innerHTML = `
+    <div class="lockwrap"><div class="card pad">
+      <p class="lab">First run</p><h2 class="t">Create your login</h2>
+      <p class="note" style="margin:0 0 14px">Choose a username and password for this browser. Nothing is sent anywhere — it is stored on this device.</p>
+      <form id="f">
+        <div class="field"><label for="u">Username</label><input id="u" required autocomplete="username" spellcheck="false"></div>
+        <div class="field"><label for="p1">Password</label><input id="p1" type="password" required autocomplete="new-password" minlength="4"></div>
+        <div class="field"><label for="p2">Repeat password</label><input id="p2" type="password" required autocomplete="new-password"></div>
+        ${msg ? `<p class="err">${esc(msg)}</p>` : ""}
+        <div><button class="primary" type="submit">Create login</button></div>
+      </form>
+    </div></div>`;
+  document.getElementById("f").addEventListener("submit", async ev => {
+    ev.preventDefault();
+    const u = document.getElementById("u").value.trim();
+    const p1 = document.getElementById("p1").value, p2 = document.getElementById("p2").value;
+    if(!u) return renderCreate("Pick a username.");
+    if(p1.length < 4) return renderCreate("Use at least four characters.");
+    if(p1 !== p2) return renderCreate("Those passwords don't match.");
+    const salt = newSalt();
+    auth = { user:u, salt, hash: await hash(p1, salt) };
+    writeJSON(LS_AUTH, auth);
+    unlock(u);
+  });
+}
+
+function renderLogin(msg){
+  setBadge(false, "locked");
+  document.getElementById("app").innerHTML = `
+    <div class="lockwrap"><div class="card pad">
+      <p class="lab">Sign in</p><h2 class="t">Spool Gauge</h2>
+      <form id="f">
+        <div class="field"><label for="u">Username</label><input id="u" required autocomplete="username" spellcheck="false" value="${esc(auth.user)}"></div>
+        <div class="field"><label for="p">Password</label><input id="p" type="password" required autocomplete="current-password" autofocus></div>
+        ${msg ? `<p class="err">${esc(msg)}</p>` : ""}
+        <div class="row"><button class="primary" type="submit" id="go">Sign in</button></div>
+      </form>
+      <details style="margin-top:14px;border-top:1px solid var(--line)"><summary>Forgotten it?</summary>
+        <div class="dbody" style="padding-left:0;padding-right:0">
+          <p class="note" style="margin:0 0 10px">There is no reset — nothing here can verify who you are. Clearing the login also clears the spool history stored in this browser.</p>
+          <button class="ghost" id="reset">Clear login and data</button>
+        </div></details>
+    </div></div>`;
+  document.getElementById("reset").addEventListener("click", () => {
+    if(!confirm("This erases the saved login and every spool logged in this browser. Continue?")) return;
+    localStorage.removeItem(LS_AUTH); localStorage.removeItem(LS_DATA);
+    sessionStorage.removeItem(SS_OPEN);
+    auth = null; state = { activeId:null, spools:[] };
+    renderCreate();
+  });
+  document.getElementById("f").addEventListener("submit", async ev => {
+    ev.preventDefault();
+    const btn = document.getElementById("go");
+    btn.disabled = true; btn.textContent = "Checking…";
+    const u = document.getElementById("u").value.trim();
+    const p = document.getElementById("p").value;
+    const h = await hash(p, auth.salt);
+    if(u !== auth.user || h !== auth.hash) return renderLogin("That username and password don't match.");
+    unlock(u);
+  });
+}
+
+function unlock(u){
+  user = u;
+  try{ sessionStorage.setItem(SS_OPEN, "1"); }catch(e){}
+  setBadge(true, esc(u));
+  dataLoad();
+  render();
+}
+
+/* ---------------- app views ---------------- */
 function ringSVG(pct){
   const R = 66, C = 2*Math.PI*R, on = C*Math.max(0,Math.min(1,pct/100));
   let ticks = "";
@@ -234,78 +296,29 @@ function entryHTML(e){
     <span class="eval ${corr?"corr":""}">${corr ? "= "+g(e.grams) : "−"+g(e.grams)} g</span>
     <button class="ghost" data-del="${e.id}">Remove</button></li>`;
 }
-function archivedBlock(a){
+function archivedDetails(a){
   if(!a.length) return "";
-  return `<div class="card"><details><summary>Archived (${a.length})</summary><div class="dbody">
+  return `<details><summary>Archived (${a.length})</summary><div class="dbody">
     ${a.map(s=>`<div class="arch"><span>${esc(s.name)}</span><span class="emeta">${g(usedOf(s))} g used</span></div>`).join("")}
-  </div></details></div>`;
+  </div></details>`;
 }
-function settingsCard(){
-  return `<div class="card"><details><summary>Sync &amp; storage</summary><div class="dbody">
-    <p class="note" style="margin:0 0 12px">Signed in as <strong>${esc(session && session.user ? session.user.email : "")}</strong>. Sign in on any other device with the same username and password and the spools follow.</p>
-    <div class="row"><button class="ghost" id="signOut">Sign out</button><button class="ghost" id="forget">Disconnect project</button></div>
-  </div></details></div>`;
-}
-
-function renderSetup(msg){
-  document.getElementById("app").innerHTML = `
-    <div class="card pad">
-      <p class="lab">Sync setup</p>
-      <h2 class="t">Connect your Supabase project</h2>
-      <p class="note" style="margin:0 0 14px">From your project's <strong>Settings → API</strong>: the Project URL and the <code>anon public</code> key. The anon key is designed to be public — row-level security is what protects your rows. Both are stored in this browser, never in the repository.</p>
-      <form id="cfgForm">
-        <div class="field"><label for="cUrl">Project URL</label><input id="cUrl" required placeholder="https://xxxxxxxx.supabase.co" autocomplete="off" spellcheck="false"></div>
-        <div class="field"><label for="cKey">Anon public key</label><input id="cKey" required placeholder="eyJhbGciOi…" autocomplete="off" spellcheck="false"></div>
-        ${msg ? `<p class="err">${esc(msg)}</p>` : ""}
-        <div class="row"><button class="primary" type="submit">Connect</button></div>
-      </form>
-    </div>`;
-  document.getElementById("cfgForm").addEventListener("submit", async ev => {
-    ev.preventDefault();
-    const url = document.getElementById("cUrl").value.trim().replace(/\/+$/,"");
-    const key = document.getElementById("cKey").value.trim();
-    if(!/^https:\/\/.+\.supabase\.co$/.test(url)) return renderSetup("That does not look like a Supabase project URL.");
-    cfgSave({url,key});
-    await boot();
-  });
-}
-
-function renderSignIn(msg){
-  document.getElementById("app").innerHTML = `
-    <div class="card pad">
-      <p class="lab">Sign in</p>
-      <h2 class="t">Spool Gauge</h2>
-      <p class="note" style="margin:0 0 14px">Your spool history is private to your account. Sign in to reach it.</p>
-      <form id="authForm">
-        <div class="field"><label for="em">Username</label>
-          <input id="em" type="email" required placeholder="you@example.com" autocomplete="username" spellcheck="false"></div>
-        <div class="field"><label for="pw">Password</label>
-          <input id="pw" type="password" required placeholder="••••••••" autocomplete="current-password"></div>
-        ${msg ? `<p class="err">${esc(msg)}</p>` : ""}
-        <div class="row"><button class="primary" type="submit" id="goBtn">Sign in</button>
-        <button class="ghost" type="button" id="forget2">Use a different project</button></div>
-      </form>
-    </div>`;
-  document.getElementById("forget2").addEventListener("click", () => { cfgClear(); renderSetup(); });
-  document.getElementById("authForm").addEventListener("submit", async ev => {
-    ev.preventDefault();
-    const btn = document.getElementById("goBtn");
-    btn.disabled = true; btn.textContent = "Signing in…";
-    const email = document.getElementById("em").value.trim();
-    const password = document.getElementById("pw").value;
-    const { data, error } = await sb.auth.signInWithPassword({ email, password });
-    if(error || !data || !data.session){
-      return renderSignIn(error && /invalid/i.test(error.message)
-        ? "That username and password don't match an account."
-        : (error ? error.message : "Sign-in failed."));
-    }
-    session = data.session;
-    mode = "synced"; setSync(true,"synced");
-    render();
-    await pull();
-    render();
-    subscribeLive();
-  });
+function toolsCard(){
+  return `<div class="card">
+    <details><summary>Backup &amp; transfer</summary><div class="dbody">
+      <p class="note" style="margin:0 0 12px">This page stores everything in this browser, so your phone and your computer keep separate histories. Export a file here and import it on the other device to bring them level.</p>
+      <div class="row"><button id="exp">Export a backup</button><button class="ghost" id="impBtn">Import a backup</button></div>
+      <input type="file" id="imp" accept="application/json" style="display:none">
+      <p class="good" id="ioMsg" style="margin-top:10px"></p>
+    </div></details>
+    <details><summary>Account</summary><div class="dbody">
+      <p class="note" style="margin:0 0 12px">Signed in as <strong>${esc(user)}</strong> on this device.</p>
+      <form id="pwForm"><div class="row">
+        <div class="field"><label for="np">New password</label><input id="np" type="password" autocomplete="new-password" minlength="4"></div>
+        <div class="field" style="justify-content:flex-end"><button type="submit">Change it</button></div>
+      </div><p class="good" id="pwMsg"></p></form>
+      <div class="row" style="margin-top:6px"><button class="ghost" id="lock">Lock</button></div>
+    </div></details>
+  </div>`;
 }
 
 function render(){
@@ -316,14 +329,16 @@ function render(){
 
   if(!sp){
     app.innerHTML = `<div class="card pad">
-        <p class="lab">Start here</p><h2 class="t">Open a spool</h2>
-        <p class="note" style="margin:0 0 14px">Name it and give the net weight of filament on the reel — the filament only, not the spool.</p>
+        <p class="lab">Start here</p><h2 class="t">New spool</h2>
+        <p class="note" style="margin:0 0 14px">Name it and give the net weight of filament on the reel — the filament, not the plastic reel.</p>
         <form id="newForm"><div class="row">
           <div class="field" style="flex:2 1 180px"><label for="nName">Spool</label><input id="nName" required placeholder="White PLA" autocomplete="off"></div>
           <div class="field"><label for="nNet">Net grams</label><input id="nNet" required inputmode="decimal" placeholder="1000"></div>
         </div><div><button class="primary" type="submit">Open spool</button></div></form>
-      </div>` + archivedBlock(archived) + settingsCard();
-    wireCommon();
+      </div>
+      <div class="card">${archivedDetails(archived) || `<div class="pad"><p class="note" style="margin:0">Nothing archived yet.</p></div>`}</div>`
+      + toolsCard();
+    wireTools();
     document.getElementById("newForm").addEventListener("submit", ev => {
       ev.preventDefault();
       const n = document.getElementById("nName").value.trim();
@@ -346,7 +361,7 @@ function render(){
         <span class="pct">${Math.max(0,Math.round(pct))}%</span><span class="pctlab">remaining</span></div></div>
       <div class="readout">
         <div><div class="spoolname">${esc(sp.name)}</div>
-          <div class="lab" style="margin-top:3px">Opened ${new Date(sp.openedAt).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})}</div></div>
+          <div class="lab" style="margin-top:3px">Opened ${new Date(sp.openedAt).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})} · ${g(sp.netGrams)} g</div></div>
         <span class="flag ${lvl}">${flagTxt}</span>
         <div class="stats">
           <div class="stat"><div class="statv">${g(Math.max(rem,0))} g</div><div class="statl">left</div></div>
@@ -358,12 +373,12 @@ function render(){
     <div class="card pad"><p class="lab" style="margin:0 0 12px">Log a print</p>
       <form id="logForm"><div class="row">
         <div class="field"><label for="lg">Grams</label><input id="lg" required inputmode="decimal" placeholder="53" autocomplete="off"></div>
-        <div class="field" style="flex:2 1 190px"><label for="ll">What was it</label><input id="ll" placeholder="obj_28_face_top" autocomplete="off"></div>
+        <div class="field" style="flex:2 1 190px"><label for="ll">What the job was</label><input id="ll" placeholder="obj_28_face_top" autocomplete="off"></div>
       </div><div><button class="primary" type="submit">Log it</button></div></form></div>
 
     <div class="card">
       <div class="hbar"><span class="lab">History</span><span class="lab">${sp.entries.length} ${sp.entries.length===1?"entry":"entries"}</span></div>
-      ${sp.entries.length===0 ? `<p class="empty">Nothing logged yet. Enter the grams Creality Print reports when it slices a job.</p>`
+      ${sp.entries.length===0 ? `<p class="empty">Nothing logged yet. Enter the grams the slicer reports for a job.</p>`
         : `<ol>${sp.entries.slice().reverse().map(entryHTML).join("")}</ol>`}</div>
 
     <div class="card">
@@ -381,12 +396,10 @@ function render(){
         </div><div class="row"><button type="submit">Open new spool</button>
         <button type="button" class="ghost" id="archBtn">Archive “${esc(sp.name)}”</button></div></form>
       </div></details>
-      ${archived.length ? `<details><summary>Archived (${archived.length})</summary><div class="dbody">
-        ${archived.map(s=>`<div class="arch"><span>${esc(s.name)}</span><span class="emeta">${g(usedOf(s))} g used</span></div>`).join("")}
-      </div></details>` : ""}
-    </div>` + settingsCard();
+      ${archivedDetails(archived)}
+    </div>` + toolsCard();
 
-  wireCommon();
+  wireTools();
   document.getElementById("logForm").addEventListener("submit", ev => {
     ev.preventDefault();
     const v = parseFloat(document.getElementById("lg").value);
@@ -408,55 +421,58 @@ function render(){
   app.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => removeEntry(b.dataset.del)));
 }
 
-function wireCommon(){
-  const so = document.getElementById("signOut");
-  if(so) so.addEventListener("click", async () => { await sb.auth.signOut(); location.reload(); });
-  const fg = document.getElementById("forget");
-  if(fg) fg.addEventListener("click", () => { cfgClear(); location.reload(); });
-  const cn = document.getElementById("connect");
-  if(cn) cn.addEventListener("click", () => { cfgClear(); renderSetup(); });
-}
-
-function setSync(on, text){
-  document.getElementById("dot").classList.toggle("on", !!on);
-  document.getElementById("syncTxt").textContent = text;
+function wireTools(){
+  const exp = document.getElementById("exp");
+  if(exp) exp.addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify(state,null,2)], {type:"application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "spool-gauge-" + new Date().toISOString().slice(0,10) + ".json";
+    a.click(); URL.revokeObjectURL(a.href);
+    document.getElementById("ioMsg").textContent = "Backup downloaded.";
+  });
+  const impBtn = document.getElementById("impBtn"), imp = document.getElementById("imp");
+  if(impBtn) impBtn.addEventListener("click", () => imp.click());
+  if(imp) imp.addEventListener("change", () => {
+    const f = imp.files && imp.files[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      try{
+        const d = JSON.parse(r.result);
+        if(!d || !Array.isArray(d.spools)) throw new Error("bad file");
+        if(!confirm("Replace this device's spool history with the backup?")) return;
+        state = { activeId: d.activeId || null, spools: d.spools };
+        dataSave(); render();
+      }catch(e){
+        const m = document.getElementById("ioMsg");
+        if(m){ m.className = "err"; m.textContent = "That file isn't a Spool Gauge backup."; }
+      }
+    };
+    r.readAsText(f);
+  });
+  const pwForm = document.getElementById("pwForm");
+  if(pwForm) pwForm.addEventListener("submit", async ev => {
+    ev.preventDefault();
+    const np = document.getElementById("np").value;
+    const msg = document.getElementById("pwMsg");
+    if(np.length < 4){ msg.className = "err"; msg.textContent = "Use at least four characters."; return; }
+    const salt = newSalt();
+    auth = { user, salt, hash: await hash(np, salt) };
+    writeJSON(LS_AUTH, auth);
+    document.getElementById("np").value = "";
+    msg.className = "good"; msg.textContent = "Password changed.";
+  });
+  const lock = document.getElementById("lock");
+  if(lock) lock.addEventListener("click", () => { sessionStorage.removeItem(SS_OPEN); location.reload(); });
 }
 
 /* ---------------- boot ---------------- */
-async function boot(){
-  dataLoad(); cfgLoad();
-
-  if(!cfg || !cfg.url || !cfg.key){ setSync(false,"not set up"); return renderSetup(); }
-
-  if(!window.supabase || !window.supabase.createClient){
-    setSync(false,"offline");
-    document.getElementById("app").innerHTML =
-      `<div class="card pad"><h2 class="t">Can't reach the sign-in service</h2>
-       <p class="note" style="margin:6px 0 0">The page loaded but its database client did not. Check the connection and reload.</p></div>`;
-    return;
-  }
-  sb = window.supabase.createClient(cfg.url, cfg.key);
-  const { data } = await sb.auth.getSession();
-  session = data ? data.session : null;
-  if(!session){ setSync(false,"signed out"); return renderSignIn(); }
-
-  mode = "synced"; setSync(true,"synced");
-  render();
-  await pull();
-  render();
-  subscribeLive();
-}
-
-function subscribeLive(){
-  if(!sb || !session) return;
-  sb.channel("spool_state_live")
-    .on("postgres_changes",
-        { event:"*", schema:"public", table:"spool_state", filter:"user_id=eq."+session.user.id },
-        () => { if(!busy) pull().then(render); })
-    .subscribe();
-}
-
-window.addEventListener("DOMContentLoaded", boot);
+(function boot(){
+  auth = readJSON(LS_AUTH);
+  if(!auth || !auth.hash) return renderCreate();
+  if(sessionStorage.getItem(SS_OPEN) === "1") return unlock(auth.user);
+  renderLogin();
+})();
 </script>
 </body>
 </html>
