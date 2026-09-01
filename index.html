@@ -242,11 +242,8 @@ function archivedBlock(a){
 }
 function settingsCard(){
   return `<div class="card"><details><summary>Sync &amp; storage</summary><div class="dbody">
-    ${mode === "synced"
-      ? `<p class="note" style="margin:0 0 12px">Synced to your own Supabase project as <strong>${esc(session.user.email||"")}</strong>. Open this page on any device, sign in with the same email, and the spools follow.</p>
-         <div class="row"><button class="ghost" id="signOut">Sign out</button><button class="ghost" id="forget">Disconnect project</button></div>`
-      : `<p class="note" style="margin:0 0 12px">Data is stored in this browser only — it will not follow you to another device. Connect a Supabase project to sync.</p>
-         <div class="row"><button id="connect">Connect a project</button></div>`}
+    <p class="note" style="margin:0 0 12px">Signed in as <strong>${esc(session && session.user ? session.user.email : "")}</strong>. Sign in on any other device with the same username and password and the spools follow.</p>
+    <div class="row"><button class="ghost" id="signOut">Sign out</button><button class="ghost" id="forget">Disconnect project</button></div>
   </div></details></div>`;
 }
 
@@ -260,7 +257,7 @@ function renderSetup(msg){
         <div class="field"><label for="cUrl">Project URL</label><input id="cUrl" required placeholder="https://xxxxxxxx.supabase.co" autocomplete="off" spellcheck="false"></div>
         <div class="field"><label for="cKey">Anon public key</label><input id="cKey" required placeholder="eyJhbGciOi…" autocomplete="off" spellcheck="false"></div>
         ${msg ? `<p class="err">${esc(msg)}</p>` : ""}
-        <div class="row"><button class="primary" type="submit">Connect</button><button class="ghost" type="button" id="skip">Skip — this device only</button></div>
+        <div class="row"><button class="primary" type="submit">Connect</button></div>
       </form>
     </div>`;
   document.getElementById("cfgForm").addEventListener("submit", async ev => {
@@ -271,32 +268,43 @@ function renderSetup(msg){
     cfgSave({url,key});
     await boot();
   });
-  document.getElementById("skip").addEventListener("click", () => { cfgSave({skip:true}); boot(); });
 }
 
-function renderSignIn(msg, sent){
+function renderSignIn(msg){
   document.getElementById("app").innerHTML = `
     <div class="card pad">
       <p class="lab">Sign in</p>
-      <h2 class="t">${sent ? "Check your email" : "Sign in to sync"}</h2>
-      ${sent
-        ? `<p class="note" style="margin:0 0 14px">A sign-in link is on its way. Open it on this device and you will land back here, signed in.</p>
-           <button class="ghost" id="again">Use a different email</button>`
-        : `<p class="note" style="margin:0 0 14px">No password. Enter your email and Supabase sends a one-time sign-in link.</p>
-           <form id="authForm">
-             <div class="field"><label for="em">Email</label><input id="em" type="email" required placeholder="you@example.com" autocomplete="email"></div>
-             ${msg ? `<p class="err">${esc(msg)}</p>` : ""}
-             <div class="row"><button class="primary" type="submit">Send link</button><button class="ghost" type="button" id="forget2">Use a different project</button></div>
-           </form>`}
+      <h2 class="t">Spool Gauge</h2>
+      <p class="note" style="margin:0 0 14px">Your spool history is private to your account. Sign in to reach it.</p>
+      <form id="authForm">
+        <div class="field"><label for="em">Username</label>
+          <input id="em" type="email" required placeholder="you@example.com" autocomplete="username" spellcheck="false"></div>
+        <div class="field"><label for="pw">Password</label>
+          <input id="pw" type="password" required placeholder="••••••••" autocomplete="current-password"></div>
+        ${msg ? `<p class="err">${esc(msg)}</p>` : ""}
+        <div class="row"><button class="primary" type="submit" id="goBtn">Sign in</button>
+        <button class="ghost" type="button" id="forget2">Use a different project</button></div>
+      </form>
     </div>`;
-  if(sent){ document.getElementById("again").addEventListener("click", () => renderSignIn(null,false)); return; }
   document.getElementById("forget2").addEventListener("click", () => { cfgClear(); renderSetup(); });
   document.getElementById("authForm").addEventListener("submit", async ev => {
     ev.preventDefault();
+    const btn = document.getElementById("goBtn");
+    btn.disabled = true; btn.textContent = "Signing in…";
     const email = document.getElementById("em").value.trim();
-    const { error } = await sb.auth.signInWithOtp({ email, options:{ emailRedirectTo: location.href.split("#")[0] } });
-    if(error) return renderSignIn(error.message, false);
-    renderSignIn(null, true);
+    const password = document.getElementById("pw").value;
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if(error || !data || !data.session){
+      return renderSignIn(error && /invalid/i.test(error.message)
+        ? "That username and password don't match an account."
+        : (error ? error.message : "Sign-in failed."));
+    }
+    session = data.session;
+    mode = "synced"; setSync(true,"synced");
+    render();
+    await pull();
+    render();
+    subscribeLive();
   });
 }
 
@@ -418,22 +426,29 @@ function setSync(on, text){
 async function boot(){
   dataLoad(); cfgLoad();
 
-  if(!cfg){ setSync(false,"not set up"); return renderSetup(); }
-  if(cfg.skip || !cfg.url || !cfg.key){ mode = "local"; setSync(false,"this device"); return render(); }
+  if(!cfg || !cfg.url || !cfg.key){ setSync(false,"not set up"); return renderSetup(); }
 
   if(!window.supabase || !window.supabase.createClient){
-    mode = "local"; setSync(false,"offline"); return render();
+    setSync(false,"offline");
+    document.getElementById("app").innerHTML =
+      `<div class="card pad"><h2 class="t">Can't reach the sign-in service</h2>
+       <p class="note" style="margin:6px 0 0">The page loaded but its database client did not. Check the connection and reload.</p></div>`;
+    return;
   }
   sb = window.supabase.createClient(cfg.url, cfg.key);
   const { data } = await sb.auth.getSession();
   session = data ? data.session : null;
-  if(!session){ mode="local"; setSync(false,"signed out"); return renderSignIn(); }
+  if(!session){ setSync(false,"signed out"); return renderSignIn(); }
 
   mode = "synced"; setSync(true,"synced");
   render();
   await pull();
   render();
+  subscribeLive();
+}
 
+function subscribeLive(){
+  if(!sb || !session) return;
   sb.channel("spool_state_live")
     .on("postgres_changes",
         { event:"*", schema:"public", table:"spool_state", filter:"user_id=eq."+session.user.id },
