@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#EBEEEF">
+<title>Spool Gauge</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧵</text></svg>">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧵</text></svg>">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#EBEEEF; --panel:#FBFCFC; --panel-2:#F2F5F6;
+  --ink:#15191C; --muted:#5C666E; --faint:#8A949B;
+  --line:#D2D8DB; --line-strong:#B9C2C7;
+  --accent:#1C6A7A; --accent-ink:#FFFFFF; --accent-soft:#DCEBEE;
+  --warn:#9A6516; --crit:#A23126;
+  --shadow:0 1px 2px rgba(20,30,35,.06),0 8px 24px -12px rgba(20,30,35,.18);
+  --r:10px;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#121517; --panel:#1B1F22; --panel-2:#22282B;
+    --ink:#E7ECEE; --muted:#96A1A8; --faint:#727D84;
+    --line:#2B3236; --line-strong:#3A4348;
+    --accent:#54B5C6; --accent-ink:#0C1214; --accent-soft:#16333A;
+    --warn:#D5A052; --crit:#DC7266;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#121517; --panel:#1B1F22; --panel-2:#22282B;
+  --ink:#E7ECEE; --muted:#96A1A8; --faint:#727D84;
+  --line:#2B3236; --line-strong:#3A4348;
+  --accent:#54B5C6; --accent-ink:#0C1214; --accent-soft:#16333A;
+  --warn:#D5A052; --crit:#DC7266;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -14px rgba(0,0,0,.7);
+}
+*{box-sizing:border-box}
+html,body{background:var(--ground)}
+body{
+  margin:0;color:var(--ink);
+  font-family:Archivo,"Helvetica Neue",Arial,sans-serif;font-size:15px;line-height:1.5;
+  -webkit-text-size-adjust:100%;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.wrap{max-width:660px;margin:0 auto;padding:20px 16px 64px;display:flex;flex-direction:column;gap:16px}
+.top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{font-size:19px;font-weight:700;letter-spacing:-.01em;margin:0}
+.sub{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;color:var(--faint);letter-spacing:.08em;text-transform:uppercase}
+.sync{display:inline-flex;align-items:center;gap:6px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--line-strong);flex:0 0 auto}
+.dot.on{background:var(--accent)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.pad{padding:18px}
+.lab{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+h2.t{margin:6px 0 4px;font-size:18px;font-weight:600;letter-spacing:-.01em}
+.gauge{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+.dial{position:relative;flex:0 0 auto;width:168px;height:168px}
+.dial svg{display:block;width:168px;height:168px;transform:rotate(-90deg)}
+.dial .track{fill:none;stroke:var(--line);stroke-width:13}
+.dial .arc{fill:none;stroke:var(--accent);stroke-width:13;transition:stroke-dasharray .5s cubic-bezier(.22,.8,.3,1),stroke .3s}
+.dial.warn .arc{stroke:var(--warn)} .dial.crit .arc{stroke:var(--crit)}
+.dial .tick{stroke:var(--line-strong);stroke-width:1.5}
+.dialtxt{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px}
+.pct{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:600;font-size:34px;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.pctlab{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.readout{flex:1 1 200px;min-width:190px;display:flex;flex-direction:column;gap:12px}
+.spoolname{font-size:17px;font-weight:600;letter-spacing:-.01em;text-wrap:balance}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:9px 11px}
+.statv{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.statl{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-top:1px}
+.flag{display:inline-block;align-self:flex-start;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:10px;letter-spacing:.07em;text-transform:uppercase;padding:3px 8px;border-radius:99px;border:1px solid}
+.flag.ok{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+.flag.warn{color:var(--warn);border-color:var(--warn)}
+.flag.crit{color:var(--crit);border-color:var(--crit)}
+form{display:flex;flex-direction:column;gap:12px}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.field{display:flex;flex-direction:column;gap:5px;flex:1 1 130px;min-width:120px}
+label{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+input{font-family:Archivo,sans-serif;font-size:16px;color:var(--ink);background:var(--panel-2);
+  border:1px solid var(--line-strong);border-radius:8px;padding:10px 11px;width:100%;min-width:0}
+input[inputmode="decimal"]{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+input:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button{font-family:Archivo,sans-serif;font-size:14px;font-weight:600;border-radius:8px;padding:11px 16px;
+  border:1px solid var(--line-strong);background:var(--panel-2);color:var(--ink);cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button.primary:hover{filter:brightness(1.07)}
+button.ghost{background:transparent;border-color:var(--line);color:var(--muted);font-weight:500;padding:7px 11px;font-size:13px}
+button.ghost:hover{color:var(--ink);border-color:var(--line-strong)}
+.hbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+ol{list-style:none;margin:0;padding:0}
+li.entry{display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid var(--line)}
+li.entry:last-child{border-bottom:0}
+.etype{width:3px;align-self:stretch;border-radius:2px;background:var(--accent);flex:0 0 auto}
+.etype.corr{background:var(--warn)}
+.emain{flex:1 1 auto;min-width:0}
+.elabel{font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.emeta{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:10.5px;color:var(--faint);letter-spacing:.03em;display:block}
+.eval{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.eval.corr{color:var(--warn)}
+.empty{padding:26px 18px;color:var(--muted);font-size:14px;margin:0}
+details{border-top:1px solid var(--line)}
+details:first-child{border-top:0}
+summary{cursor:pointer;padding:13px 18px;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+summary:hover,details[open]>summary{color:var(--ink)}
+.dbody{padding:0 18px 18px}
+.note{font-size:13px;color:var(--muted);line-height:1.55}
+.arch{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+.arch:last-child{border-bottom:0}
+.foot{font-size:12.5px;color:var(--faint);text-align:center;line-height:1.6;margin:0}
+.err{color:var(--crit);font-size:13px;margin:0}
+.ok{color:var(--accent);font-size:13px;margin:0}
+code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12.5px;background:var(--panel-2);padding:1px 5px;border-radius:4px;border:1px solid var(--line)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media(max-width:430px){.dial,.dial svg{width:140px;height:140px}.pct{font-size:29px}.gauge{gap:16px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Spool Gauge</h1>
+    <span class="sub sync"><span class="dot" id="dot"></span><span id="syncTxt">local only</span></span>
+  </div>
+  <div id="app"></div>
+  <p class="foot">Estimates drift — purge, priming and failed prints all burn filament.<br>Weigh the spool now and then and use <strong>Correct by weighing</strong>.</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ============================================================
+   Spool Gauge — filament tracking for a Creality K1
+   Storage: Supabase (synced) when configured, else this browser.
+   No keys are stored in this repository. The Supabase project URL
+   and anon key are entered in the app and kept in localStorage.
+   ============================================================ */
+
+const LS_DATA = "spoolgauge.data.v2";
+const LS_CFG  = "spoolgauge.config.v1";
+const uid  = () => Math.random().toString(36).slice(2,10);
+const nowISO = () => new Date().toISOString();
+
+let state  = { activeId:null, spools:[] };
+let cfg    = null;   // {url, key}
+let sb     = null;   // supabase client
+let session= null;
+let mode   = "local"; // local | synced
+let busy   = false;
+
+/* ---------------- storage ---------------- */
+function cfgLoad(){ try{ const r = localStorage.getItem(LS_CFG); cfg = r ? JSON.parse(r) : null; }catch(e){ cfg = null; } }
+function cfgSave(c){ cfg = c; try{ localStorage.setItem(LS_CFG, JSON.stringify(c)); }catch(e){} }
+function cfgClear(){ cfg = null; try{ localStorage.removeItem(LS_CFG); }catch(e){} }
+function dataLoad(){ try{ const r = localStorage.getItem(LS_DATA); if(r) state = JSON.parse(r); }catch(e){} }
+function dataSave(){ try{ localStorage.setItem(LS_DATA, JSON.stringify(state)); }catch(e){} }
+
+async function pull(){
+  if(mode !== "synced") return;
+  const { data, error } = await sb.from("spool_state").select("payload").eq("user_id", session.user.id).maybeSingle();
+  if(error){ console.warn(error.message); return; }
+  if(data && data.payload && Array.isArray(data.payload.spools)){
+    state = { activeId: data.payload.activeId || null, spools: data.payload.spools };
+    dataSave();
+  } else if(state.spools.length){
+    await push();
+  }
+}
+async function push(){
+  dataSave();
+  if(mode !== "synced") return;
+  busy = true;
+  const { error } = await sb.from("spool_state")
+    .upsert({ user_id: session.user.id, payload: state, updated_at: nowISO() }, { onConflict:"user_id" });
+  busy = false;
+  if(error) console.warn(error.message);
+}
+
+/* ---------------- model ---------------- */
+const active = () => state.spools.find(s => s.id === state.activeId) || null;
+function remainingOf(sp){ let r = sp.netGrams; for(const e of sp.entries){ if(e.type === "correction") r = e.grams; else r -= e.grams; } return r; }
+function usedOf(sp){ return sp.netGrams - remainingOf(sp); }
+function printsOf(sp){ return sp.entries.filter(e => e.type === "print"); }
+function level(pct){ return pct < 12 ? "crit" : pct < 30 ? "warn" : "ok"; }
+const g = n => (Math.round(n*10)/10).toLocaleString(undefined,{maximumFractionDigits:1});
+function fmtDate(iso){ const d = new Date(iso);
+  return d.toLocaleDateString(undefined,{month:"short",day:"numeric"}) + " " + d.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"}); }
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+/* ---------------- actions ---------------- */
+function addSpool(name, netGrams){
+  state.spools.unshift({ id:uid(), name, netGrams, openedAt:nowISO(), archived:false, entries:[] });
+  state.activeId = state.spools[0].id; push(); render();
+}
+function logPrint(grams, label){
+  const sp = active(); if(!sp) return;
+  sp.entries.push({ id:uid(), type:"print", grams, label: label || "Print", ts: nowISO() }); push(); render();
+}
+function logCorrection(grams){
+  const sp = active(); if(!sp) return;
+  sp.entries.push({ id:uid(), type:"correction", grams, label:"Weighed", ts: nowISO() }); push(); render();
+}
+function removeEntry(id){
+  const sp = active(); if(!sp) return;
+  sp.entries = sp.entries.filter(e => e.id !== id); push(); render();
+}
+function archiveSpool(){
+  const sp = active(); if(!sp) return;
+  sp.archived = true; sp.closedAt = nowISO();
+  const next = state.spools.find(s => !s.archived);
+  state.activeId = next ? next.id : null; push(); render();
+}
+function selectSpool(id){ state.activeId = id; push(); render(); }
+
+/* ---------------- views ---------------- */
+function ringSVG(pct){
+  const R = 66, C = 2*Math.PI*R, on = C*Math.max(0,Math.min(1,pct/100));
+  let ticks = "";
+  for(let i=0;i<10;i++){
+    const a=(i/10)*2*Math.PI;
+    ticks += `<line class="tick" x1="${(84+Math.cos(a)*54).toFixed(1)}" y1="${(84+Math.sin(a)*54).toFixed(1)}" x2="${(84+Math.cos(a)*58).toFixed(1)}" y2="${(84+Math.sin(a)*58).toFixed(1)}"/>`;
+  }
+  return `<svg viewBox="0 0 168 168" aria-hidden="true">
+    <circle class="track" cx="84" cy="84" r="${R}"/>
+    <circle class="arc" cx="84" cy="84" r="${R}" stroke-dasharray="${on.toFixed(1)} ${(C-on).toFixed(1)}"/>${ticks}</svg>`;
+}
+function entryHTML(e){
+  const corr = e.type === "correction";
+  return `<li class="entry"><span class="etype ${corr?"corr":""}"></span>
+    <span class="emain"><span class="elabel">${esc(e.label)}</span><span class="emeta">${fmtDate(e.ts)}</span></span>
+    <span class="eval ${corr?"corr":""}">${corr ? "= "+g(e.grams) : "−"+g(e.grams)} g</span>
+    <button class="ghost" data-del="${e.id}">Remove</button></li>`;
+}
+function archivedBlock(a){
+  if(!a.length) return "";
+  return `<div class="card"><details><summary>Archived (${a.length})</summary><div class="dbody">
+    ${a.map(s=>`<div class="arch"><span>${esc(s.name)}</span><span class="emeta">${g(usedOf(s))} g used</span></div>`).join("")}
+  </div></details></div>`;
+}
+function settingsCard(){
+  return `<div class="card"><details><summary>Sync &amp; storage</summary><div class="dbody">
+    ${mode === "synced"
+      ? `<p class="note" style="margin:0 0 12px">Synced to your own Supabase project as <strong>${esc(session.user.email||"")}</strong>. Open this page on any device, sign in with the same email, and the spools follow.</p>
+         <div class="row"><button class="ghost" id="signOut">Sign out</button><button class="ghost" id="forget">Disconnect project</button></div>`
+      : `<p class="note" style="margin:0 0 12px">Data is stored in this browser only — it will not follow you to another device. Connect a Supabase project to sync.</p>
+         <div class="row"><button id="connect">Connect a project</button></div>`}
+  </div></details></div>`;
+}
+
+function renderSetup(msg){
+  document.getElementById("app").innerHTML = `
+    <div class="card pad">
+      <p class="lab">Sync setup</p>
+      <h2 class="t">Connect your Supabase project</h2>
+      <p class="note" style="margin:0 0 14px">From your project's <strong>Settings → API</strong>: the Project URL and the <code>anon public</code> key. The anon key is designed to be public — row-level security is what protects your rows. Both are stored in this browser, never in the repository.</p>
+      <form id="cfgForm">
+        <div class="field"><label for="cUrl">Project URL</label><input id="cUrl" required placeholder="https://xxxxxxxx.supabase.co" autocomplete="off" spellcheck="false"></div>
+        <div class="field"><label for="cKey">Anon public key</label><input id="cKey" required placeholder="eyJhbGciOi…" autocomplete="off" spellcheck="false"></div>
+        ${msg ? `<p class="err">${esc(msg)}</p>` : ""}
+        <div class="row"><button class="primary" type="submit">Connect</button><button class="ghost" type="button" id="skip">Skip — this device only</button></div>
+      </form>
+    </div>`;
+  document.getElementById("cfgForm").addEventListener("submit", async ev => {
+    ev.preventDefault();
+    const url = document.getElementById("cUrl").value.trim().replace(/\/+$/,"");
+    const key = document.getElementById("cKey").value.trim();
+    if(!/^https:\/\/.+\.supabase\.co$/.test(url)) return renderSetup("That does not look like a Supabase project URL.");
+    cfgSave({url,key});
+    await boot();
+  });
+  document.getElementById("skip").addEventListener("click", () => { cfgSave({skip:true}); boot(); });
+}
+
+function renderSignIn(msg, sent){
+  document.getElementById("app").innerHTML = `
+    <div class="card pad">
+      <p class="lab">Sign in</p>
+      <h2 class="t">${sent ? "Check your email" : "Sign in to sync"}</h2>
+      ${sent
+        ? `<p class="note" style="margin:0 0 14px">A sign-in link is on its way. Open it on this device and you will land back here, signed in.</p>
+           <button class="ghost" id="again">Use a different email</button>`
+        : `<p class="note" style="margin:0 0 14px">No password. Enter your email and Supabase sends a one-time sign-in link.</p>
+           <form id="authForm">
+             <div class="field"><label for="em">Email</label><input id="em" type="email" required placeholder="you@example.com" autocomplete="email"></div>
+             ${msg ? `<p class="err">${esc(msg)}</p>` : ""}
+             <div class="row"><button class="primary" type="submit">Send link</button><button class="ghost" type="button" id="forget2">Use a different project</button></div>
+           </form>`}
+    </div>`;
+  if(sent){ document.getElementById("again").addEventListener("click", () => renderSignIn(null,false)); return; }
+  document.getElementById("forget2").addEventListener("click", () => { cfgClear(); renderSetup(); });
+  document.getElementById("authForm").addEventListener("submit", async ev => {
+    ev.preventDefault();
+    const email = document.getElementById("em").value.trim();
+    const { error } = await sb.auth.signInWithOtp({ email, options:{ emailRedirectTo: location.href.split("#")[0] } });
+    if(error) return renderSignIn(error.message, false);
+    renderSignIn(null, true);
+  });
+}
+
+function render(){
+  const app = document.getElementById("app");
+  const sp = active();
+  const others = state.spools.filter(s => !s.archived && s.id !== state.activeId);
+  const archived = state.spools.filter(s => s.archived);
+
+  if(!sp){
+    app.innerHTML = `<div class="card pad">
+        <p class="lab">Start here</p><h2 class="t">Open a spool</h2>
+        <p class="note" style="margin:0 0 14px">Name it and give the net weight of filament on the reel — the filament only, not the spool.</p>
+        <form id="newForm"><div class="row">
+          <div class="field" style="flex:2 1 180px"><label for="nName">Spool</label><input id="nName" required placeholder="White PLA" autocomplete="off"></div>
+          <div class="field"><label for="nNet">Net grams</label><input id="nNet" required inputmode="decimal" placeholder="1000"></div>
+        </div><div><button class="primary" type="submit">Open spool</button></div></form>
+      </div>` + archivedBlock(archived) + settingsCard();
+    wireCommon();
+    document.getElementById("newForm").addEventListener("submit", ev => {
+      ev.preventDefault();
+      const n = document.getElementById("nName").value.trim();
+      const w = parseFloat(document.getElementById("nNet").value);
+      if(n && w>0) addSpool(n,w);
+    });
+    return;
+  }
+
+  const rem = remainingOf(sp), used = usedOf(sp);
+  const pct = sp.netGrams>0 ? (rem/sp.netGrams)*100 : 0;
+  const lvl = level(pct), prints = printsOf(sp);
+  const avg = prints.length ? prints.reduce((a,e)=>a+e.grams,0)/prints.length : 0;
+  const left = avg>0 ? Math.floor(Math.max(rem,0)/avg) : null;
+  const flagTxt = lvl==="ok" ? "healthy" : lvl==="warn" ? "getting low" : "nearly out";
+
+  app.innerHTML = `
+    <div class="card pad"><div class="gauge">
+      <div class="dial ${lvl}">${ringSVG(pct)}<div class="dialtxt">
+        <span class="pct">${Math.max(0,Math.round(pct))}%</span><span class="pctlab">remaining</span></div></div>
+      <div class="readout">
+        <div><div class="spoolname">${esc(sp.name)}</div>
+          <div class="lab" style="margin-top:3px">Opened ${new Date(sp.openedAt).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})}</div></div>
+        <span class="flag ${lvl}">${flagTxt}</span>
+        <div class="stats">
+          <div class="stat"><div class="statv">${g(Math.max(rem,0))} g</div><div class="statl">left</div></div>
+          <div class="stat"><div class="statv">${g(used)} g</div><div class="statl">used</div></div>
+          <div class="stat"><div class="statv">${prints.length}</div><div class="statl">prints</div></div>
+          <div class="stat"><div class="statv">${left===null?"—":left}</div><div class="statl">more at ${avg?g(avg):"—"} g</div></div>
+        </div></div></div></div>
+
+    <div class="card pad"><p class="lab" style="margin:0 0 12px">Log a print</p>
+      <form id="logForm"><div class="row">
+        <div class="field"><label for="lg">Grams</label><input id="lg" required inputmode="decimal" placeholder="53" autocomplete="off"></div>
+        <div class="field" style="flex:2 1 190px"><label for="ll">What was it</label><input id="ll" placeholder="obj_28_face_top" autocomplete="off"></div>
+      </div><div><button class="primary" type="submit">Log it</button></div></form></div>
+
+    <div class="card">
+      <div class="hbar"><span class="lab">History</span><span class="lab">${sp.entries.length} ${sp.entries.length===1?"entry":"entries"}</span></div>
+      ${sp.entries.length===0 ? `<p class="empty">Nothing logged yet. Enter the grams Creality Print reports when it slices a job.</p>`
+        : `<ol>${sp.entries.slice().reverse().map(entryHTML).join("")}</ol>`}</div>
+
+    <div class="card">
+      <details><summary>Correct by weighing</summary><div class="dbody">
+        <p class="note" style="margin:0 0 12px">Put the spool on a kitchen scale and subtract the empty reel's weight. Enter what is actually left — it replaces the running estimate from here on.</p>
+        <form id="corrForm"><div class="row">
+          <div class="field"><label for="cg">Actual grams left</label><input id="cg" required inputmode="decimal" placeholder="742" autocomplete="off"></div>
+          <div class="field" style="justify-content:flex-end"><button type="submit">Set remaining</button></div>
+        </div></form></div></details>
+      <details><summary>Spools</summary><div class="dbody">
+        ${others.map(s=>`<div class="arch"><span>${esc(s.name)} · ${Math.round((remainingOf(s)/s.netGrams)*100)}%</span><button class="ghost" data-switch="${s.id}">Switch to</button></div>`).join("")}
+        <form id="addForm" style="margin-top:${others.length?"14px":"0"}"><div class="row">
+          <div class="field" style="flex:2 1 160px"><label for="aName">New spool</label><input id="aName" required placeholder="White PLA" autocomplete="off"></div>
+          <div class="field"><label for="aNet">Net grams</label><input id="aNet" required inputmode="decimal" placeholder="1000"></div>
+        </div><div class="row"><button type="submit">Open new spool</button>
+        <button type="button" class="ghost" id="archBtn">Archive “${esc(sp.name)}”</button></div></form>
+      </div></details>
+      ${archived.length ? `<details><summary>Archived (${archived.length})</summary><div class="dbody">
+        ${archived.map(s=>`<div class="arch"><span>${esc(s.name)}</span><span class="emeta">${g(usedOf(s))} g used</span></div>`).join("")}
+      </div></details>` : ""}
+    </div>` + settingsCard();
+
+  wireCommon();
+  document.getElementById("logForm").addEventListener("submit", ev => {
+    ev.preventDefault();
+    const v = parseFloat(document.getElementById("lg").value);
+    if(v>0) logPrint(v, document.getElementById("ll").value.trim());
+  });
+  document.getElementById("corrForm").addEventListener("submit", ev => {
+    ev.preventDefault();
+    const v = parseFloat(document.getElementById("cg").value);
+    if(v>=0) logCorrection(v);
+  });
+  document.getElementById("addForm").addEventListener("submit", ev => {
+    ev.preventDefault();
+    const n = document.getElementById("aName").value.trim();
+    const w = parseFloat(document.getElementById("aNet").value);
+    if(n && w>0) addSpool(n,w);
+  });
+  document.getElementById("archBtn").addEventListener("click", archiveSpool);
+  app.querySelectorAll("[data-switch]").forEach(b => b.addEventListener("click", () => selectSpool(b.dataset.switch)));
+  app.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => removeEntry(b.dataset.del)));
+}
+
+function wireCommon(){
+  const so = document.getElementById("signOut");
+  if(so) so.addEventListener("click", async () => { await sb.auth.signOut(); location.reload(); });
+  const fg = document.getElementById("forget");
+  if(fg) fg.addEventListener("click", () => { cfgClear(); location.reload(); });
+  const cn = document.getElementById("connect");
+  if(cn) cn.addEventListener("click", () => { cfgClear(); renderSetup(); });
+}
+
+function setSync(on, text){
+  document.getElementById("dot").classList.toggle("on", !!on);
+  document.getElementById("syncTxt").textContent = text;
+}
+
+/* ---------------- boot ---------------- */
+async function boot(){
+  dataLoad(); cfgLoad();
+
+  if(!cfg){ setSync(false,"not set up"); return renderSetup(); }
+  if(cfg.skip || !cfg.url || !cfg.key){ mode = "local"; setSync(false,"this device"); return render(); }
+
+  if(!window.supabase || !window.supabase.createClient){
+    mode = "local"; setSync(false,"offline"); return render();
+  }
+  sb = window.supabase.createClient(cfg.url, cfg.key);
+  const { data } = await sb.auth.getSession();
+  session = data ? data.session : null;
+  if(!session){ mode="local"; setSync(false,"signed out"); return renderSignIn(); }
+
+  mode = "synced"; setSync(true,"synced");
+  render();
+  await pull();
+  render();
+
+  sb.channel("spool_state_live")
+    .on("postgres_changes",
+        { event:"*", schema:"public", table:"spool_state", filter:"user_id=eq."+session.user.id },
+        () => { if(!busy) pull().then(render); })
+    .subscribe();
+}
+
+window.addEventListener("DOMContentLoaded", boot);
+</script>
+</body>
+</html>
